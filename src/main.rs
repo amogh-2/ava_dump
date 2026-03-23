@@ -7,30 +7,30 @@ mod reader;
 mod selector;
 mod store;
 
-use std::env;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::env;
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use config::DatasetConfig;
+use output::JsonFlowOutput;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 3 {
-        eprintln!("Usage: avadump <input_file.(pcap|csv)> <config.json>");
+    if args.len() != 4 {
+        eprintln!("Usage: avadump <input_file.(pcap|csv)> <config.json> <output.json>");
         std::process::exit(1);
     }
 
     let input_path = &args[1];
     let config_path = &args[2];
+    let output_path = &args[3];
 
     let config = DatasetConfig::load(config_path).expect("Failed to load config");
 
     if is_csv_input(input_path) {
-        process_csv(input_path, &config).expect("Failed to process CSV input");
+        process_csv(input_path, &config, output_path).expect("Failed to process CSV input");
     } else {
-        process_pcap(input_path, &config).expect("Failed to process PCAP input");
+        process_pcap(input_path, &config, output_path).expect("Failed to process PCAP input");
     }
 }
 
@@ -42,65 +42,36 @@ fn is_csv_input(path: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn process_csv(path: &str, config: &DatasetConfig) -> Result<(), Box<dyn std::error::Error>> {
+fn process_csv(
+    path: &str,
+    config: &DatasetConfig,
+    output_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut csv_reader = csv::Reader::from_path(path)?;
     let headers = csv_reader.headers()?.clone();
     let header_index = build_header_index(&headers);
+    let mut exported = Vec::new();
 
-    println!("CSV loaded. Starting ML Predictor...");
-    let python_exe = if Path::new(".venv\\Scripts\\python.exe").exists() {
-        ".venv\\Scripts\\python.exe"
-    } else {
-        "python"
-    };
-
-    let mut child = Command::new(python_exe)
-        .arg("ml_model\\predict.py")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    let mut stdin = child.stdin.take().expect("Failed to open stdin");
-    let stdout = child.stdout.take().expect("Failed to open stdout");
-    let stderr = child.stderr.take().expect("Failed to open stderr");
-
-    let mut sent = 0usize;
+    println!("CSV loaded. Extracting configured features...");
 
     for (row_idx, row) in csv_reader.records().enumerate() {
         let record = row?;
         let selected = select_csv_features(&record, &header_index, config);
         let flow_id = csv_flow_id(&record, &header_index, row_idx);
 
-        let out = output::JsonFlowOutput {
+        exported.push(JsonFlowOutput {
             flow_id,
             features: selected,
-        };
-        let js = serde_json::to_string(&out)?;
-        writeln!(stdin, "{}", js)?;
-        sent += 1;
+        });
     }
 
-    println!("Sending {} CSV rows for classification...", sent);
-    drop(stdin);
-
-    let reader = BufReader::new(stdout);
-    for line in reader.lines() {
-        if let Ok(l) = line {
-            println!("{}", l);
-        }
-    }
-
-    let status = child.wait()?;
-    if !status.success() {
-        eprintln!("Predictor process exited with non-zero status: {}", status);
-        let err_reader = BufReader::new(stderr);
-        for line in err_reader.lines() {
-            if let Ok(l) = line {
-                eprintln!("PREDICTOR ERR: {}", l);
-            }
-        }
-    }
+    write_json_output(output_path, &exported)?;
+    println!(
+        "Exported {} rows with {} features each to {}",
+        exported.len(),
+        config.features.len(),
+        output_path
+    );
 
     Ok(())
 }
@@ -169,7 +140,11 @@ fn feature_aliases(feature: &str) -> Vec<String> {
     all
 }
 
-fn process_pcap(path: &str, config: &DatasetConfig) -> Result<(), Box<dyn std::error::Error>> {
+fn process_pcap(
+    path: &str,
+    config: &DatasetConfig,
+    output_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut engine = flow::FlowEngine::new();
     let mut reader = reader::PcapFileReader::new(path)?;
 
@@ -181,57 +156,34 @@ fn process_pcap(path: &str, config: &DatasetConfig) -> Result<(), Box<dyn std::e
         }
     }
 
-    println!("Flows built. Starting ML Predictor...");
-    let python_exe = if Path::new(".venv\\Scripts\\python.exe").exists() {
-        ".venv\\Scripts\\python.exe"
-    } else {
-        "python"
-    };
-
-    let mut child = Command::new(python_exe)
-        .arg("ml_model\\predict.py")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-
-    let mut stdin = child.stdin.take().expect("Failed to open stdin");
-    let stdout = child.stdout.take().expect("Failed to open stdout");
-    let stderr = child.stderr.take().expect("Failed to open stderr");
-
     let flows = engine.into_flows();
-    println!("Sending {} flows for classification...", flows.len());
+    println!("Flows built. Extracting configured features...");
+    let mut exported = Vec::with_capacity(flows.len());
 
     for (key, features) in flows {
         let selected = selector::select_features(&features, &config);
-        let out = output::JsonFlowOutput {
+        exported.push(JsonFlowOutput {
             flow_id: output::format_flow_key(&key),
             features: selected,
-        };
-        let js = serde_json::to_string(&out).unwrap();
-        writeln!(stdin, "{}", js).unwrap();
+        });
     }
 
-    // Close stdin to signal end of data to the Python script
-    drop(stdin);
+    write_json_output(output_path, &exported)?;
+    println!(
+        "Exported {} flows with {} features each to {}",
+        exported.len(),
+        config.features.len(),
+        output_path
+    );
 
-    // Read and print classification results from Python
-    let reader = BufReader::new(stdout);
-    for line in reader.lines() {
-        if let Ok(l) = line {
-            println!("{}", l);
-        }
-    }
+    Ok(())
+}
 
-    let status = child.wait()?;
-    if !status.success() {
-        eprintln!("Predictor process exited with non-zero status: {}", status);
-        let err_reader = BufReader::new(stderr);
-        for line in err_reader.lines() {
-            if let Ok(l) = line {
-                eprintln!("PREDICTOR ERR: {}", l);
-            }
-        }
-    }
+fn write_json_output(
+    output_path: &str,
+    records: &[JsonFlowOutput],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let output = std::fs::File::create(output_path)?;
+    serde_json::to_writer_pretty(output, records)?;
     Ok(())
 }
