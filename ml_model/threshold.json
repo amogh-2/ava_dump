@@ -1,0 +1,62 @@
+{
+  "fixed_threshold": 0.0012134458845041015,
+  "metric": "f1",
+  "calibrated_from": "C:\\Users\\amogh\\Desktop\\AvaDump\\test_pcap\\temp_test.csv",
+  "rows": 9,
+  "benign_rows": 4,
+  "attack_rows": 5,
+  "selected_features": [
+    "Flow Duration",
+    "Total Fwd Packets",
+    "Total Backward Packets",
+    "Total Length of Fwd Packets",
+    "Total Length of Bwd Packets",
+    "Flow Bytes/s",
+    "Flow Packets/s",
+    "FIN Flag Count",
+    "SYN Flag Count",
+    "ACK Flag Count",
+    "Packet Length Mean",
+    "Fwd Packet Length Mean",
+    "Bwd Packet Length Mean",
+    "Fwd Packet Length Max",
+    "Bwd Packet Length Min",
+    "Down/Up Ratio",
+    "Flow IAT Mean",
+    "Flow IAT Std",
+    "Active Mean",
+    "Idle Mean",
+    "Subflow Fwd Bytes"
+  ],
+  "mse": {
+    "mean": 0.002732313451253304,
+    "min": 0.0009787863851871564,
+    "max": 0.011016716365415156
+  },
+  "best_stats": {
+    "accuracy": 0.7777777777777778,
+    "precision": 0.7142857142857143,
+    "recall": 1.0,
+    "f1": 0.8333333333333334,
+    "fpr": 0.5,
+    "tn": 2,
+    "fp": 2,
+    "fn": 0,
+    "tp": 5,
+    "pred_anomaly_rate": 0.7777777777777778
+  },
+  "legacy_threshold": 0.001201,
+  "legacy_stats": {
+    "accuracy": 0.6666666666666666,
+    "precision": 0.625,
+    "recall": 1.0,
+    "f1": 0.7692307692307693,
+    "fpr": 0.75,
+    "tn": 1,
+    "fp": 3,
+    "fn": 0,
+    "tp": 5,
+    "pred_anomaly_rate": 0.8888888888888888
+  },
+  "created_utc": "2026-03-23T05:23:03.696748+00:00"
+}
