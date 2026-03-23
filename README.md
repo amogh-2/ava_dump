@@ -42,7 +42,7 @@ Define the specific mathematical metrics you want the engine to evaluate. You ca
 ### 3. Process Input Files (PCAP or CSV)
 Execute the parser-only pipeline against your network capture or a CSV with feature columns.
 ```bash
-cargo run --release -- temo_test.csv cicids2017.json output.json
+cargo run --release -- temp_test.csv cicids2017.json output.json
 # cargo run --release -- flows.csv cicids2017.json output.json
 ```
 
