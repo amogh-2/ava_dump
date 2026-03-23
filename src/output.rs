@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use crate::store::FlowKey;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct JsonFlowOutput {
     pub flow_id: String,
     pub features: Vec<f64>,

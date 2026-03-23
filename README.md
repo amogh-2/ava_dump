@@ -46,6 +46,18 @@ cargo run --release -- temp_test.csv cicids2017.json output.json
 # cargo run --release -- flows.csv cicids2017.json output.json
 ```
 
+### 4. Run End-to-End Inference (Feature Extraction + Model Scoring)
+Use the optional `--infer` flag to stream exported flow features directly into `ml_model/predict.py`.
+
+```bash
+cargo run --release -- sample.pcap cicids2017.json output.json --infer
+```
+
+Notes:
+- This command still writes extracted features to `output.json`.
+- Inference requires `ml_model/predict.py`, `ml_model/scaler.pkl`, and `ml_model/autoencoder.keras`.
+- If available, the runtime uses `.venv/Scripts/python.exe`; otherwise it falls back to `python` in PATH.
+
 ---
 
 ## Architecture

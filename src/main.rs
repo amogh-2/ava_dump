@@ -9,28 +9,54 @@ mod store;
 
 use std::collections::HashMap;
 use std::env;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use config::DatasetConfig;
 use output::JsonFlowOutput;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() != 4 {
-        eprintln!("Usage: avadump <input_file.(pcap|csv)> <config.json> <output.json>");
+    if args.len() != 4 && args.len() != 5 {
+        eprintln!("Usage: avadump <input_file.(pcap|csv)> <config.json> <output.json> [--infer]");
         std::process::exit(1);
     }
 
     let input_path = &args[1];
     let config_path = &args[2];
     let output_path = &args[3];
+    let run_inference = if args.len() == 5 {
+        if args[4] == "--infer" {
+            true
+        } else {
+            eprintln!("Unknown option: {}", args[4]);
+            eprintln!("Usage: avadump <input_file.(pcap|csv)> <config.json> <output.json> [--infer]");
+            std::process::exit(1);
+        }
+    } else {
+        false
+    };
 
     let config = DatasetConfig::load(config_path).expect("Failed to load config");
 
-    if is_csv_input(input_path) {
-        process_csv(input_path, &config, output_path).expect("Failed to process CSV input");
+    let processing_result = if is_csv_input(input_path) {
+        process_csv(input_path, &config, output_path)
     } else {
-        process_pcap(input_path, &config, output_path).expect("Failed to process PCAP input");
+        process_pcap(input_path, &config, output_path)
+    };
+
+    if let Err(err) = processing_result {
+        eprintln!("Processing failed: {}", err);
+        std::process::exit(1);
+    }
+
+    if run_inference {
+        if let Err(err) = run_model_inference(output_path) {
+            eprintln!("Inference failed: {}", err);
+            eprintln!("Hint: ensure predictor dependencies are installed in your selected Python environment.");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -185,5 +211,55 @@ fn write_json_output(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let output = std::fs::File::create(output_path)?;
     serde_json::to_writer_pretty(output, records)?;
+    Ok(())
+}
+
+fn run_model_inference(output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let predictor_path = Path::new("ml_model").join("predict.py");
+    if !predictor_path.exists() {
+        return Err(format!(
+            "Predictor script not found at {}",
+            predictor_path.display()
+        )
+        .into());
+    }
+
+    let python_exe = if Path::new(".venv").join("Scripts").join("python.exe").exists() {
+        Path::new(".venv").join("Scripts").join("python.exe")
+    } else {
+        Path::new("python").to_path_buf()
+    };
+
+    println!("Running model inference with {}", predictor_path.display());
+
+    let mut child = Command::new(&python_exe)
+        .arg(&predictor_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+
+    let file = std::fs::File::open(output_path)?;
+    let records: Vec<JsonFlowOutput> = serde_json::from_reader(file)?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        for record in records {
+            let line = serde_json::to_string(&record)?;
+            writeln!(stdin, "{}", line)?;
+        }
+    }
+
+    if let Some(stdout) = child.stdout.take() {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            println!("{}", line?);
+        }
+    }
+
+    let status = child.wait()?;
+    if !status.success() {
+        return Err(format!("Predictor process exited with status {status}").into());
+    }
+
     Ok(())
 }
