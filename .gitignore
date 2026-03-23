@@ -1,2 +1,4 @@
 /target
-/error.log
+/output.json
+/single_flow.csv
+/temp_test.csv
