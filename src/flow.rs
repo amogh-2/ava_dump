@@ -28,7 +28,7 @@ impl FlowEngine {
             actual_key = rev_key;
         }
         
-        let entry = self.flows.entry(actual_key).or_insert_with(FlowFeatures::default);
+        let entry = self.flows.entry(actual_key).or_default();
         let mut packet_info = packet;
         packet_info.is_fwd = is_fwd;
         

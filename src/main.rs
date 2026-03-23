@@ -161,7 +161,7 @@ fn process_pcap(
     let mut exported = Vec::with_capacity(flows.len());
 
     for (key, features) in flows {
-        let selected = selector::select_features(&features, &config);
+        let selected = selector::select_features(&features, config);
         exported.push(JsonFlowOutput {
             flow_id: output::format_flow_key(&key),
             features: selected,
